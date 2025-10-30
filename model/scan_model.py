@@ -148,7 +148,7 @@ class SCAN_Model(nn.Module):
 
         fuse5 = self.fuse5(down_inp=down5,up_inp=up5)
         fuse4 = self.fuse4(down_inp=down4, up_inp=up4)
-        fuse3 =.fuse3(down_inp=down3, up_inp=up3)
+        fuse3 =self.fuse3(down_inp=down3, up_inp=up3)
         fuse2 = self.fuse2(down_inp=down2, up_inp=up2)
         fuse1 = self.fuse1(down_inp=down1, up_inp=up1)
 

@@ -7,13 +7,17 @@ import torchvision.transforms.functional as TF
 from collections import OrderedDict
 import io # Added io for the image bytes
 
-# --- NEW IMPORTS for the REAL MODEL ---
-# This now imports SCAN_Model from your renamed model/scan_model.py file
+# --- IMPORTS for the REAL MODEL ---
+# This imports SCAN_Model from your model/scan_model.py file
 try:
     from model.scan_model import SCAN_Model
 except ImportError:
     st.error("FATAL ERROR: Could not find 'model/scan_model.py'. "
              "Please make sure your file structure is correct (see instructions).")
+    st.stop()
+except SyntaxError:
+    st.error("FATAL ERROR: There is a SyntaxError in 'model/scan_model.py'. "
+             "Please check that file for typos.")
     st.stop()
 
 
@@ -21,7 +25,7 @@ except ImportError:
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
 
 # --- MODEL CONFIG ---
-MODEL_PATH = 'DeepCrack_CT260_FT1.pth' # This still points to your original weights file
+MODEL_PATH = 'SCAN_CT260_FT1.pth' # This still points to your original weights file
 INPUT_IMG_SIZE = (512, 512)
 CRACK_THRESHOLD = 0.7 
 
@@ -31,7 +35,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- NEW PYTORCH HELPER FUNCTIONS ---
+# --- PYTORCH HELPER FUNCTIONS ---
 
 @st.cache_resource
 def load_model(model_path):
@@ -49,6 +53,10 @@ def load_model(model_path):
         state_dict = torch.load(model_path, map_location=torch.device('cpu'))
     except FileNotFoundError:
         st.error(f"FATAL ERROR: Model file not found at '{model_path}'.")
+        st.error("Please make sure the file 'DeepCrack_CT260_FT1.pth' is in the same folder as 'app.py'")
+        st.stop()
+    except Exception as e:
+        st.error(f"Error loading model weights: {e}")
         st.stop()
 
     # Handle 'module.' prefix if it exists
@@ -75,21 +83,24 @@ def preprocess_image(image: Image.Image) -> torch.Tensor:
     tensor = tensor.unsqueeze(0) # Add batch dimension
     return tensor
 
+#
+# --- THIS IS THE FIX from the last error ---
+#
 @st.cache_data # Cache the prediction itself
-def get_real_crack_prediction(_image_bytes, model):
+@st.cache_data # Cache the prediction itself
+def get_real_crack_prediction(image_bytes, _model): # <-- FIX 1: No underscore
     """
     This is the REAL prediction function that uses the SCAN_Model.
-    It returns the status, the score, and the prediction mask image.
+    ...
     """
-    image = Image.open(io.BytesIO(_image_bytes))
+    image = Image.open(io.BytesIO(image_bytes)) # <-- FIX 2: No underscore
     
     # 1. Preprocess the image for the model
     input_tensor = preprocess_image(image)
     
     # 2. Run inference
     with torch.no_grad():
-        # Your model returns 6 outputs, we only need the first (final) one
-        output, *rest = model(input_tensor)
+        output, *rest = _model(input_tensor)
         
     # 3. Post-process the output
     # Apply sigmoid to convert logits to probabilities
@@ -110,7 +121,7 @@ def get_real_crack_prediction(_image_bytes, model):
     return status, score, prediction_mask
 
 
-# --- YOUR CHATBOT FUNCTION (Unchanged) ---
+# --- CHATBOT FUNCTION (Unchanged) ---
 def get_chatbot_response(messages_history):
     """
     Calls OpenAI using the provided message history.
@@ -165,7 +176,6 @@ st.title("🚧 AI-Powered Infrastructure Intelligence S.C.A.N")
 st.subheader("*Structural Crack Analysis Network*")
 st.markdown("---")
 st.header("*Real-Time Structural Analysis*")
-# --- UPDATED TEXT ---
 st.markdown("#### Powered by a *S.C.A.N (U-Net) Convolutional Neural Network (CNN)* for pixel-level feature extraction.")
 
 uploaded_file = st.file_uploader("Upload an image for analysis", type=["jpg", "jpeg", "png"])
@@ -183,11 +193,12 @@ if uploaded_file is not None:
     with col2:
         if st.session_state.analyzed_file_name != uploaded_file.name:
             # --- THIS IS THE NEW, REAL ANALYSIS ---
-            # --- UPDATED TEXT ---
             with st.spinner("🤖 Analyzing pixels with S.C.A.N AI..."):
                 image_bytes = uploaded_file.getvalue()
                 
                 # Call the REAL prediction function
+                # Note that 'model' is passed in, but the function definition
+                # receives it as '_model', which is correct.
                 status, score, prediction_mask = get_real_crack_prediction(image_bytes, model)
             
             # Save results to session state for the RAG bot
@@ -199,7 +210,6 @@ if uploaded_file is not None:
             st.session_state.analyzed_file_name = uploaded_file.name
         
         # --- DISPLAY THE PREDICTION MASK ---
-        # --- UPDATED TEXT ---
         st.image(
             st.session_state.analysis_context["prediction_mask"], 
             caption="S.C.A.N AI Prediction Mask (Probability)", 
@@ -247,7 +257,6 @@ st.sidebar.info(
 )
 st.sidebar.markdown("---")
 st.sidebar.header("*Technology Stack*")
-# --- UPDATED TEXT ---
 st.sidebar.markdown(
     """
     * *Frontend:* Streamlit
