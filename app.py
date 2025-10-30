@@ -6,6 +6,25 @@ import torch
 import torchvision.transforms.functional as TF
 from collections import OrderedDict
 import io # Added io for the image bytes
+import gdown  
+
+# File details
+FILE_ID = "1ErH11Je7uZdoCp0BnEXQAIu4rtgGaqNC"
+DRIVE_URL = f"https://drive.google.com/uc?id={FILE_ID}"
+MODEL_PATH = "SCAN_CT260_FT1.pth"
+
+@st.cache_resource
+def load_model():
+    if not os.path.exists(MODEL_PATH):
+        st.info("Downloading model weights... (only once)")
+        os.makedirs("model", exist_ok=True)
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+
+    model = torch.load(MODEL_PATH, map_location="cpu")
+    model.eval()
+    return model
+
+model = load_model()
 
 # --- IMPORTS for the REAL MODEL ---
 # This imports SCAN_Model from your model/scan_model.py file
