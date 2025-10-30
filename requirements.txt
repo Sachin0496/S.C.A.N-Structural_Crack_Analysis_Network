@@ -4,4 +4,4 @@ torch
 torchvision
 numpy
 pillow
-gdown
+

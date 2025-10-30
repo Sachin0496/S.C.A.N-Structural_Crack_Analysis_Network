@@ -5,13 +5,8 @@ import openai
 import torch
 import torchvision.transforms.functional as TF
 from collections import OrderedDict
-import io # Added io for the image bytes
-import gdown  
+import io 
 
-# File details
-FILE_ID = "1ErH11Je7uZdoCp0BnEXQAIu4rtgGaqNC"
-DRIVE_URL = f"https://drive.google.com/uc?id={FILE_ID}"
-MODEL_PATH = "SCAN_CT260_FT1.pth"
 
 @st.cache_resource
 def load_model():
