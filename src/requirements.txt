@@ -1,2 +1,3 @@
-torch
-opencv-python
+torch 
+opencv
+streamlit
