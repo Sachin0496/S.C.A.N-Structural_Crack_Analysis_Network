@@ -10,10 +10,10 @@ def t_randint(min, max):
 
 class augCompose(object):
 
-    def _init_(self, transforms=None):
+    def __init__(self, transforms=None):
         self.transforms = transforms
 
-    def _call_(self, img, mask):
+    def __call__(self, img, mask):
 
         if self.transforms is not None:
             for op, prob in self.transforms:
@@ -100,3 +100,4 @@ def _Saturation(img, var=0.3):
     img = alpha * img.astype(np.float32) + (1 - alpha) * gs.astype(np.float32)
     img = np.clip(img, 0, 255)
     return img.astype(np.uint8)
+
