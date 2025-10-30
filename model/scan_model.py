@@ -59,11 +59,12 @@ class Fuse(nn.Module):
         return self.conv(outputs)
 
 
-
-class DeepCrack(nn.Module):
+# --- RENAMED CLASS ---
+class SCAN_Model(nn.Module):
 
     def __init__(self, num_classes=1000):
-        super(DeepCrack, self).__init__()
+        # --- UPDATED SUPER() CALL ---
+        super(SCAN_Model, self).__init__()
 
         self.down1 = Down(torch.nn.Sequential(
             ConvRelu(3,64),
@@ -147,17 +148,10 @@ class DeepCrack(nn.Module):
 
         fuse5 = self.fuse5(down_inp=down5,up_inp=up5)
         fuse4 = self.fuse4(down_inp=down4, up_inp=up4)
-        fuse3 = self.fuse3(down_inp=down3, up_inp=up3)
+        fuse3 =.fuse3(down_inp=down3, up_inp=up3)
         fuse2 = self.fuse2(down_inp=down2, up_inp=up2)
         fuse1 = self.fuse1(down_inp=down1, up_inp=up1)
 
         output = self.final(torch.cat([fuse5,fuse4,fuse3,fuse2,fuse1],1))
 
         return output, fuse5, fuse4, fuse3, fuse2, fuse1
-
-if __name__ == '__main__':
-    inp = torch.randn((1,3,512,512))
-
-    model = DeepCrack()
-
-    out = model(inp)
