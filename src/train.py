@@ -135,9 +135,9 @@ def main():
 
     except KeyboardInterrupt:
         trainer.saver.save(model, tag='Auto_Save_Model')
-        print('\n⚠️ Interrupted – model auto-saved.')
+        print('\n⚠ Interrupted – model auto-saved.')
         sys.exit(0)
 
 
 if _name_ == '_main_':
-    main()
+    main()
