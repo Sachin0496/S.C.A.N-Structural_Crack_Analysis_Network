@@ -469,4 +469,4 @@ if prompt := st.chat_input("Ask about this tool or crack implications..."):
             st.markdown(response)
     
     # Add assistant response to state
-    st.session_state.messages.append({"role": "assistant", "content":response})
+    st.session_state.messages.append({"role": "assistant", "content": response})
