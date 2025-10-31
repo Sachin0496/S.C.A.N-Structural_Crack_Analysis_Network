@@ -244,7 +244,7 @@ if uploaded_file is not None:
     col1, col2 = st.columns(2)
     original_pil_image = Image.open(uploaded_file)
     with col1:
-        st.image(original_pil_image, caption="Image Under Analysis", use_column_width=True)
+        st.image(original_pil_image, caption="Image Under Analysis", use_container_width=True)
 
     with col2:
         if st.session_state.analyzed_file_name != uploaded_file.name:
@@ -263,7 +263,7 @@ if uploaded_file is not None:
         st.image(
             st.session_state.analysis_context["prediction_mask"], 
             caption="S.C.A.N AI Prediction Mask (Probability)", 
-            use_column_width=True, 
+            use_container_width=True, 
             clamp=True
         )
 
