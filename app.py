@@ -5,20 +5,17 @@ import openai
 import torch
 import torchvision.transforms.functional as TF
 from collections import OrderedDict
-import io 
+import io
 
 
 # --- IMPORTS for the REAL MODEL ---
-# This imports SCAN_Model from your model/scan_model.py file
 try:
     from model.scan_model import SCAN_Model
 except ImportError:
-    st.error("FATAL ERROR: Could not find 'model/scan_model.py'. "
-             "Please make sure your file structure is correct (see instructions).")
+    st.error("FATAL ERROR: Could not find 'model/scan_model.py'.")
     st.stop()
 except SyntaxError:
-    st.error("FATAL ERROR: There is a SyntaxError in 'model/scan_model.py'. "
-             "Please check that file for typos.")
+    st.error("FATAL ERROR: There is a SyntaxError in 'model/scan_model.py'.")
     st.stop()
 
 
@@ -26,9 +23,8 @@ except SyntaxError:
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
 
 # --- MODEL CONFIG ---
-MODEL_PATH = 'SCAN_CT260_FT1.pth' # This still points to your original weights file
+MODEL_PATH = 'SCAN_CT260_FT1.pth'
 INPUT_IMG_SIZE = (512, 512)
-CRACK_THRESHOLD = 0.7 
 
 st.set_page_config(
     page_title="AI S-C.A.N Intelligence",
@@ -40,27 +36,16 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model(model_path):
-    """
-    Loads the SCAN_Model and handles the 'module.' prefix
-    from DataParallel training.
-    """
     st.info("Loading S.C.A.N AI model... this may take a moment.")
-    
-    # Instantiate the "body"
     model = SCAN_Model()
-    
-    # Load the "brain" (.pth file) onto the CPU
     try:
         state_dict = torch.load(model_path, map_location=torch.device('cpu'))
     except FileNotFoundError:
         st.error(f"FATAL ERROR: Model file not found at '{model_path}'.")
-        st.error("Please make sure the file 'DeepCrack_CT260_FT1.pth' is in the same folder as 'app.py'")
         st.stop()
     except Exception as e:
         st.error(f"Error loading model weights: {e}")
         st.stop()
-
-    # Handle 'module.' prefix if it exists
     if next(iter(state_dict)).startswith('module.'):
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -69,97 +54,108 @@ def load_model(model_path):
         model.load_state_dict(new_state_dict)
     else:
         model.load_state_dict(state_dict)
-
-    # Set to evaluation mode (CRITICAL)
     model.eval()
     st.success("S.C.A.N AI model loaded successfully!")
     return model
 
 def preprocess_image(image: Image.Image) -> torch.Tensor:
-    """ Prepares a PIL Image for the SCAN_Model model. """
     if image.mode != 'RGB':
         image = image.convert('RGB')
     image = image.resize(INPUT_IMG_SIZE, Image.BILINEAR)
     tensor = TF.to_tensor(image)
-    tensor = tensor.unsqueeze(0) # Add batch dimension
+    tensor = tensor.unsqueeze(0)
     return tensor
 
-#
-# --- THIS IS THE FIX from the last error ---
-#
-@st.cache_data # Cache the prediction itself
-@st.cache_data # Cache the prediction itself
-def get_real_crack_prediction(image_bytes, _model): # <-- FIX 1: No underscore
+
+@st.cache_data
+def get_real_crack_prediction(image_bytes, _model):
     """
-    This is the REAL prediction function that uses the SCAN_Model.
-    ...
+    NEW LOGIC: This function calculates the "Average Crack Severity" (0-100)
+    based on the user's mental model.
     """
-    image = Image.open(io.BytesIO(image_bytes)) # <-- FIX 2: No underscore
-    
-    # 1. Preprocess the image for the model
+    image = Image.open(io.BytesIO(image_bytes))
     input_tensor = preprocess_image(image)
     
-    # 2. Run inference
     with torch.no_grad():
         output, *rest = _model(input_tensor)
         
-    # 3. Post-process the output
-    # Apply sigmoid to convert logits to probabilities
     probabilities = torch.sigmoid(output)
-    
-    # Remove batch dim, move to CPU, convert to NumPy
     prediction_mask = probabilities.cpu().squeeze().numpy()
     
-    # 4. Generate the 'status' and 'score' your RAG bot needs
-    # The "score" will be the highest probability pixel in the mask
-    score = np.max(prediction_mask)
+    # --- NEW "AVERAGE SEVERITY" LOGIC ---
     
-    if score > CRACK_THRESHOLD:
+    # 1. Define what we consider a crack pixel (user's "40" implies 0.4, but 0.5 is safer)
+    CONFIDENCE_THRESHOLD = 0.5 
+    
+    # 2. Find all pixels that are *above* this threshold
+    crack_pixels = prediction_mask[prediction_mask > CONFIDENCE_THRESHOLD]
+    
+    # 3. Calculate the score
+    if crack_pixels.size == 0:
+        # No cracks found at all
+        score = 0.0
+    else:
+        # Get the *average confidence* of all detected crack pixels
+        # This gives us a score from 0.0 to 1.0
+        average_confidence = np.mean(crack_pixels)
+        # Convert to the 0-100 scale the user wants (e.g., 0.623 -> 62.3)
+        score = average_confidence * 100 
+    
+    # --- NEW 6-LEVEL LOGIC BASED ON USER'S "40" and "80" ---
+    THRESH_HAZARDOUS_HIGH = 90 # (e.g. 90+)
+    THRESH_HAZARDOUS_LOW = 80  # (User's "hazardous")
+    THRESH_TREAT_HIGH = 60
+    THRESH_TREAT_LOW = 40      # (User's "should be treated")
+    THRESH_MONITOR = 30        # (Below "treat" but not zero)
+
+    if score >= THRESH_HAZARDOUS_HIGH:
         status = "DANGER"
+    elif score >= THRESH_HAZARDOUS_LOW:
+        status = "SEVERE"
+    elif score >= THRESH_TREAT_HIGH:
+        status = "WARNING"
+    elif score >= THRESH_TREAT_LOW:
+        status = "CAUTION"
+    elif score >= THRESH_MONITOR:
+        status = "LOW RISK"
     else:
         status = "SAFE"
         
+    # Return the 0-100 score and the visual mask
     return status, score, prediction_mask
 
 
 # --- CHATBOT FUNCTION (Unchanged) ---
 def get_chatbot_response(messages_history):
-    """
-    Calls OpenAI using the provided message history.
-    """
     if not OPENAI_API_KEY:
-        return ("Error: OpenAI API Key is not configured. "
-                "Please add it to your `.streamlit/secrets.toml` file.")
-        
+        return "Error: OpenAI API Key is not configured."
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)  
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo", # This is the "cheaper model"
             messages=messages_history
         )
         return response.choices[0].message.content
     except Exception as e:
-        if "AuthenticationError" in str(e):
-            return "Error: The OpenAI API Key in your `secrets.toml` file is incorrect or invalid."
-        if "insufficient_quota" in str(e):
-            return "Error: The OpenAI account has exceeded its quota. Please check your billing."
-        return f"*Error: Could not connect to OpenAI.\n\nDetails:* {e}"
+        return f"*Error: Could not connect to OpenAI.* {e}"
 
-# --- SYSTEM PROMPT (Unchanged) ---
+# --- "IMPROVISED" SYSTEM PROMPT ---
+# More professional, more "ground truth"
 system_prompt = (
-    "You are 'SCAN ASSISTANT', an expert AI assistant for a structural analysis tool. "
-    "Your purpose is twofold:\n\n"
-    "1. *Guide the User:* Answer questions about how to use this website (e.g., 'How do I upload?', 'What does this report mean?').\n"
-    "2. *Provide Expertise:* Act as an expert on structural integrity. Your answers must be limited to cracks in *roads, **buildings, and **bridges. You must explain the **future implications* and potential dangers of different types of cracks (e.g., 'What happens if this crack is ignored?').\n\n"
-    "*You must strictly refuse to answer any questions outside of these two topics.* "
-    "If a user asks about anything else (like recipes, sports, or general history), you must politely state that your function is limited to structural analysis and guiding them on this tool."
+    "You are 'SCAN ASSISTANT', a professional AI expert for a structural analysis tool. "
+    "Your function is to provide expert analysis based on the tool's findings. "
+    "Your answers **must be restricted** to two topics:\n\n"
+    "1. *Tool Guidance:* Explain how to use the website (uploading, reading the report). "
+    "2. *Structural Expertise:* Provide analysis on the implications of cracks in **roads, buildings, and bridges.** Explain the potential dangers and recommended actions.\n\n"
+    "*RAG Context:* When the user uploads an image, you will receive a 'Crack Severity Score' (0-100) and a 'Status'. This score is the **average confidence** of the detected crack, *not* its size. A low score (e.g., 35) is a faint, low-confidence crack. A high score (e.g., 85) is a sharp, high-confidence defect.\n\n"
+    "You **must refuse** all other requests (e.g., recipes, history, sports) by politely stating your function is limited to structural analysis."
 )
 
 # --- Initialize Chat History (Unchanged) ---
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "assistant", "content": "Welcome! I am SCAN ASSISTANT. Ask me how to use this tool or about the implications of cracks in roads and buildings."}
+        {"role": "assistant", "content": "Welcome. I am the S.C.A.N. Assistant. Please upload an image for analysis or ask a question about structural integrity."}
     ]
 if "analysis_context" not in st.session_state:
     st.session_state.analysis_context = None
@@ -167,7 +163,6 @@ if "analyzed_file_name" not in st.session_state:
     st.session_state.analyzed_file_name = None
 
 # --- LOAD THE AI MODEL ---
-# This is done once and cached
 model = load_model(MODEL_PATH)
 
 
@@ -184,7 +179,6 @@ st.markdown("---")
 
 if uploaded_file is not None:
     
-    # We now show the original image AND the prediction mask
     col1, col2 = st.columns(2)
     
     original_pil_image = Image.open(uploaded_file)
@@ -193,24 +187,18 @@ if uploaded_file is not None:
 
     with col2:
         if st.session_state.analyzed_file_name != uploaded_file.name:
-            # --- THIS IS THE NEW, REAL ANALYSIS ---
             with st.spinner("🤖 Analyzing pixels with S.C.A.N AI..."):
                 image_bytes = uploaded_file.getvalue()
-                
-                # Call the REAL prediction function
-                # Note that 'model' is passed in, but the function definition
-                # receives it as '_model', which is correct.
+                # --- This is the new logic ---
                 status, score, prediction_mask = get_real_crack_prediction(image_bytes, model)
             
-            # Save results to session state for the RAG bot
             st.session_state.analysis_context = {
                 "status": status,
-                "score": score,
-                "prediction_mask": prediction_mask # Store the mask too
+                "score": score, # This 'score' is now the 0-100 severity
+                "prediction_mask": prediction_mask
             }
             st.session_state.analyzed_file_name = uploaded_file.name
         
-        # --- DISPLAY THE PREDICTION MASK ---
         st.image(
             st.session_state.analysis_context["prediction_mask"], 
             caption="S.C.A.N AI Prediction Mask (Probability)", 
@@ -220,37 +208,80 @@ if uploaded_file is not None:
 
     st.markdown("---")
     
-    # --- DISPLAY THE REPORT (Your logic, unchanged) ---
+    # --- REPORTING SECTION (NOW USES THE 0-100 SCORE) ---
     report = st.session_state.analysis_context
+    status = report['status']
+    score = report['score'] # This is now 0-100
+
     st.header("*Analysis Report*")
+
+    if status == "DANGER":
+        st.error(f"### 🚨🚨🚨 STATUS: {status} (Severity > 90)")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
+        st.subheader("*Recommended Action*")
+        st.error(
+            "## **CRITICAL: IMMEDIATE ACTION REQUIRED**\n"
+            "#### The detected crack is extremely sharp and well-defined, indicating a **severe, high-confidence defect**.\n"
+            "#### **Evacuate the immediate area if applicable. Contact a certified structural engineer for an emergency inspection *NOW*.**"
+        )
     
-    if report["status"] == "DANGER":
-        st.error(f"### Status: {report['status']}")
-        # We now use the *real* score
-        st.metric(label="Defect Confidence Score", value=f"{report['score']*100:.1f}%")
+    elif status == "SEVERE":
+        st.error(f"### 🟥 STATUS: {status} (Severity > 80)")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
+        st.subheader("*Recommended Action*")
+        st.error(
+            "### **High Priority: Urgent Inspection Required**\n"
+            "#### This is a **hazardous defect** (Severity > 80). The crack is clear and poses a significant risk.\n"
+            "#### **Schedule an inspection with a qualified professional *today*. Do not delay.**"
+        )
+
+    elif status == "WARNING":
+        st.warning(f"### ⚠️ STATUS: {status} (Severity > 60)")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
         st.subheader("*Recommended Action*")
         st.warning(
-            "#### *Immediate inspection by a certified structural engineer is required.* "
-            "This defect may compromise structural integrity and pose a safety risk."
+            "### **Priority: Inspection Recommended**\n"
+            "#### The crack is well-defined. While not yet hazardous, it exceeds the treatment threshold and should be addressed.\n"
+            "#### **Schedule an inspection in the near future.**"
         )
-    
-    else:  
-        st.success(f"### Status: {report['status']}")
-        # The score is now the max probability of a crack.
-        # A low "max" probability is good.
-        st.metric(label="Confidence Score (No Defect)", value=f"{(1.0 - report['score'])*100:.1f}%")
+
+    elif status == "CAUTION":
+        st.info(f"### 🟡 STATUS: {status} (Severity > 40)")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
         st.subheader("*Recommended Action*")
         st.info(
-            "#### *No immediate defects detected.* "
-            "Recommend periodic monitoring (e.g., every 6-12 months) to track any changes."
+            "### **Monitor Closely: Treatment Advised**\n"
+            "#### A clear crack has been detected (Severity > 40). This is at the level where **treatment is advised**.\n"
+            "#### **Log this location and schedule for maintenance or re-scan in 3-6 months.**"
         )
+
+    elif status == "LOW RISK":
+        st.info(f"### 📈 STATUS: {status} (Severity > 30)")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
+        st.subheader("*Recommended Action*")
+        st.info(
+            "### **Low Risk: Periodic Monitoring Advised**\n"
+            "#### The analysis detected a **faint, low-confidence anomaly** (e.g., potential hairline crack or image noise).\n"
+            "#### **Re-scan in 6-12 months as part of a standard maintenance schedule.**"
+        )
+    
+    else: # This is the "SAFE" (Score < 30)
+        st.success(f"### ✅ STATUS: {status}")
+        st.metric(label="Crack Severity Score", value=f"{score:.1f} / 100")
+        st.subheader("*Recommended Action*")
+        st.success(
+            "### **No Significant Defects Detected**\n"
+            "#### No clear defects were found, or anomalies are below the monitoring threshold (< 30 Severity).\n"
+            "#### **Continue with standard maintenance schedules.**"
+        )
+        st.balloons()
 
 else:
     st.session_state.analysis_context = None
     st.session_state.analyzed_file_name = None
     st.info("Upload an image in the panel above to begin analysis.")
 
-# --- Sidebar Information (Your code, unchanged) ---
+# --- Sidebar Information (Unchanged) ---
 st.sidebar.title(" SCAN-Structural Crack Analysis Network")
 st.sidebar.info(
     "**This Tool Leverages A Deep Learning Model To Detect, Classify, And "
@@ -270,34 +301,35 @@ st.sidebar.markdown(
 )
 st.sidebar.markdown("---")
 
-# --- CHATBOT INSIDE SIDEBAR (Your code, unchanged) ---
-st.sidebar.header("🤖 S-C.A.N HELPER")
+# --- CHATBOT INSIDE SIDEBAR (NOW WITH NEW RAG) ---
+st.sidebar.header("🤖 S.C.A.N HELPER")
 st.sidebar.markdown("*Your AI assistant for Structural Integrity.*")
 st.sidebar.markdown("---")
 
-# 1. Display all past messages in a scrolling container
 with st.sidebar.container(height=350):
     for message in st.session_state.messages:
         if message["role"] != "system":
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-# 2. Get new user input
 prompt = st.sidebar.text_input("Ask about this tool or crack implications...", key=f"chat_input_{len(st.session_state.messages)}")
 
 if prompt:
-    # User has pressed Enter, so we process the prompt
     st.session_state.messages.append({"role": "user", "content": prompt})
     api_messages = list(st.session_state.messages)  
     
-    # This is your RAG logic - it still works perfectly!
+    # --- THIS IS THE "IMPROVISED" RAG CONTEXT ---
     if st.session_state.analysis_context:
         status = st.session_state.analysis_context['status']
         score = st.session_state.analysis_context['score']
-        confidence = f"{score*100:.1f}%"
+        
+        # This new context is much clearer for the "cheap" LLM
         context_str = (
             f"[Current Analysis Context: The image scan shows a '{status}' status. "
-            f"The confidence score is {confidence}. Use this context to answer the user's question.]"
+            f"The 'Crack Severity Score' is {score:.1f} (out of 100). "
+            f"This score represents the *average confidence* of the detected crack, not its size. "
+            f"A score over 40 requires treatment, and over 80 is hazardous. "
+            f"Use this to answer the user's question.]"
         )
         api_messages.append({"role": "system", "content": context_str})
     
