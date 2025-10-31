@@ -81,7 +81,7 @@ def load_model(model_path):
     """
     model = SCAN_Model()
     try:
-        state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+        state_dict = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
     except FileNotFoundError:
         st.error(f"FATAL ERROR: Model file not found at '{model_path}'.")
         st.error("Please make sure the file 'DeepCrack_CT260_FT1.pth' is in the same folder as 'app.py'")
