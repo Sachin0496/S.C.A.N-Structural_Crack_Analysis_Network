@@ -8,19 +8,6 @@ from collections import OrderedDict
 import io 
 
 
-@st.cache_resource
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        st.info("Downloading model weights... (only once)")
-        os.makedirs("model", exist_ok=True)
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-
-    model = torch.load(MODEL_PATH, map_location="cpu")
-    model.eval()
-    return model
-
-model = load_model()
-
 # --- IMPORTS for the REAL MODEL ---
 # This imports SCAN_Model from your model/scan_model.py file
 try:
