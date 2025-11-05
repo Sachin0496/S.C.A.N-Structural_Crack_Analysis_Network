@@ -1,0 +1,19 @@
+[theme]
+# Set the base to "light"
+base = "light"
+
+# Primary accent color (Apple Blue)
+primaryColor = "#007AFF"
+
+# 1. Main Area: A "greyish white"
+backgroundColor = "#FAFAFA"
+
+# 2. Sidebar: The "darkish grey" you wanted
+secondaryBackgroundColor = "#262730"
+
+# 3. Text: We REMOVE the "textColor" line.
+# This lets Streamlit automatically choose the correct
+# (dark) text for the main page and (light) text for the sidebar.
+
+# Use the clean, readable font stack
+font = "'-apple-system', 'BlinkMacSystemFont', 'San Francisco', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'"
